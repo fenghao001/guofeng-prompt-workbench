@@ -415,21 +415,49 @@ async function call_llm(system, user, cfg, opts) {
   if (extra) kwargs.extra_body = extra;
 
   const payloadSize = JSON.stringify(kwargs).length;
-  console.log(`[call_llm] base=${base} model=${model} payloadBytes=${payloadSize} region=${process.env.RAILWAY_REGION || 'unknown'}`);
+  const region = process.env.RAILWAY_REGION || process.env.FLY_REGION || 'unknown';
+  console.log(`[call_llm] base=${base} model=${model} payloadBytes=${payloadSize} region=${region}`);
 
   try {
     const resp = await client.chat.completions.create(kwargs);
     const msg = resp.choices[0].message;
     return msg.content;
   } catch (e) {
+    const msg = e.message || '';
+    const isConnectionError = !e.status && !e.statusCode && /connection|timeout|reset|refused|aborted|ENOTFOUND|ECONNRESET|ETIMEDOUT|socket/i.test(msg);
+    console.error('[call_llm] SDK 异常:', msg, '| code:', e.code || e.cause?.code, '| type:', e.type, '| status:', e.status || e.statusCode, '| isConnectionError:', isConnectionError);
+
+    // Railway / 部分容器里 OpenAI SDK 底层连接不稳定，自动 fallback 到 axios 原生 HTTP
+    if (isConnectionError) {
+      console.log('[call_llm] 触发 axios fallback，尝试原生 HTTP 重试...');
+      try {
+        const url = base + '/chat/completions';
+        const r = await axios.post(url, kwargs, {
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+          timeout: 300000,
+          responseType: 'json',
+          validateStatus: () => true,
+        });
+        if (r.status >= 200 && r.status < 300) {
+          const content = r.data?.choices?.[0]?.message?.content;
+          if (content) return content;
+        }
+        const err = new Error(`axios fallback HTTP ${r.status}: ${JSON.stringify(r.data).slice(0, 200)}`);
+        err.status = r.status;
+        err.body = r.data;
+        throw err;
+      } catch (axErr) {
+        console.error('[call_llm] axios fallback 也失败:', axErr.message);
+        throw axErr;
+      }
+    }
+
     // 把 OpenAI SDK 错误中的状态码、原始响应体一并抛出，便于前端诊断
-    const err = new Error(e.message || 'LLM 调用失败');
+    const err = new Error(msg || 'LLM 调用失败');
     err.status = e.status || e.statusCode;
     err.body = e.error || e.response?.body || null;
     err.code = e.code || e.cause?.code;
     err.type = e.type;
-    err.stack = e.stack;
-    console.error('[call_llm] SDK 异常:', e.message, '| code:', e.code || e.cause?.code, '| type:', e.type, '| status:', err.status);
     throw err;
   }
 }
