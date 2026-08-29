@@ -20,7 +20,19 @@ function readSkillFiles(directory) {
   return files.map(f => fs.readFileSync(path.join(directory, f), 'utf-8'));
 }
 
+// Skill 配方是静态文件：首次读取后缓存，避免每次请求都用 readFileSync 同步读盘、
+// 阻塞事件循环（Node 单线程，同步 I/O 会让并发请求排队）。
+// 注意：改过 skills/ 下的 md 后需要重启服务才会生效。
+const RECIPE_CACHE = new Map();
+
 function loadRecipe(source) {
+  if (RECIPE_CACHE.has(source)) return RECIPE_CACHE.get(source);
+  const result = read_recipe_from_disk(source);
+  RECIPE_CACHE.set(source, result);
+  return result;
+}
+
+function read_recipe_from_disk(source) {
   if (source === '天宫') {
     const dir = SKILL_DIR_GIANT;
     const files = ['SKILL.md', 'visual-grammar.md', 'model-recipes.md', 'failure-constraints.md', 'scene-library.md'];
@@ -171,6 +183,49 @@ function validate_output(sections, requireHuman) {
   return { valid: errors.length === 0, errors };
 }
 
+// ---------- SSRF 防护：不要让服务端变成打内网的代理 ----------
+// 页面允许使用者自行填写 Base URL，若不校验，服务端就会被拿去请求任意地址
+// （扫内网、探测云元数据 169.254.169.254 等）。这里只拦「私有 / 本机 / 非 http(s)」，
+// 公网域名一律放行，换豆包 / DeepSeek / NVIDIA 等端点都不受影响。
+function isBlockedHost(hostname) {
+  const h = (hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+  if (!h) return true;
+  if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.internal')) return true;
+
+  // IPv4 字面量
+  const v4 = h.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (v4) {
+    const a = Number(v4[1]);
+    const b = Number(v4[2]);
+    if (a === 127 || a === 10 || a === 0) return true;      // 回环 / 私有 A 类 / 0.0.0.0
+    if (a === 169 && b === 254) return true;                // 云元数据 169.254.0.0/16
+    if (a === 172 && b >= 16 && b <= 31) return true;       // 私有 B 类
+    if (a === 192 && b === 168) return true;                // 私有 C 类
+    if (a >= 224) return true;                              // 组播 / 保留段
+    return false;
+  }
+
+  // IPv6 字面量：回环、未指定、唯一本地、链路本地
+  if (h === '::1' || h === '::' || h.startsWith('fc') || h.startsWith('fd') || h.startsWith('fe80')) return true;
+
+  return false;
+}
+
+function assertSafeEndpoint(base) {
+  let u;
+  try {
+    u = new URL(base);
+  } catch (_) {
+    throw new Error('接口地址不是合法 URL：' + base);
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+    throw new Error('接口地址协议必须是 http 或 https：' + base);
+  }
+  if (isBlockedHost(u.hostname)) {
+    throw new Error('接口地址指向内网或本机地址，已拒绝：' + base);
+  }
+}
+
 function isNVIDIA(cfg) {
   const base = (cfg.baseUrl || process.env.LLM_BASE_URL || '').toLowerCase();
   const model = (cfg.model || process.env.LLM_MODEL || '').toLowerCase();
@@ -218,7 +273,9 @@ function build_params(cfg, opts) {
   const tokenField = pick(cfg.tokenField, process.env.TOKEN_FIELD) === 'max_completion_tokens'
     ? 'max_completion_tokens'
     : 'max_tokens';
-  let maxTokens = parseInt(pick(cfg.maxTokens, process.env.MAX_TOKENS) || '16000', 10);
+  // 默认值刻意压低：16K 输出会让单次生成耗时数分钟；四段提示词 4K 通常已足够。
+  // 需要更长输出时，在 .env / 平台环境变量里设 MAX_TOKENS 即可覆盖。
+  let maxTokens = parseInt(pick(cfg.maxTokens, process.env.MAX_TOKENS) || '4096', 10);
   if (o.maxTokens) maxTokens = o.maxTokens;
   params[tokenField] = maxTokens;
 
@@ -405,6 +462,9 @@ async function call_llm(system, user, cfg, opts) {
   if (!key) throw new Error('未配置 API Key：请在面板填写，或在 .env 设置 LLM_API_KEY');
   if (!model) throw new Error('未配置模型名：请在面板填写，或在 .env 设置 LLM_MODEL');
 
+  // SSRF 防护：拒绝内网 / 本机 / 非 http(s) 的端点
+  assertSafeEndpoint(base);
+
   const messages = build_messages(system, user, cfg);
 
   // 通用调用参数：只发送面板/站点显式配置过的字段
@@ -471,7 +531,7 @@ app.get('/api/config', (req, res) => {
   const cfg = {
     baseUrl: process.env.LLM_BASE_URL || '',
     model: process.env.LLM_MODEL || '',
-    maxTokens: parseInt(process.env.MAX_TOKENS || '16000', 10),
+    maxTokens: parseInt(process.env.MAX_TOKENS || '4096', 10),
     apiKeySet: !!process.env.LLM_API_KEY,
     mock: process.env.MOCK === '1',
     reasoningEnabled: false,
@@ -544,6 +604,8 @@ app.post('/api/health-llm', async (req, res) => {
   const payload = { model, messages: [{ role: 'user', content: 'hi' }], max_tokens: 2 };
   const start = Date.now();
   try {
+    // SSRF 防护：拒绝内网 / 本机 / 非 http(s) 的端点
+    assertSafeEndpoint(base);
     const r = await axios.post(url, payload, {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
       timeout: 30000,
