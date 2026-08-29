@@ -442,6 +442,8 @@ async function call_llm(system, user, cfg, opts) {
       err.body = e.response.data;
       throw err;
     }
+    // 已经是我们构造好的 HTTP 错误对象（带 status/body），直接原样抛出
+    if (e.status != null || e.body != null) throw e;
     throw new Error('LLM 调用失败: ' + e.message);
   }
 }
