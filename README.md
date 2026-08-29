@@ -127,19 +127,34 @@ node axios-call.mjs    # 原生 axios 版（会打印完整请求体）
 
 浏览器直接调 NVIDIA 会被同源策略拦死，所以必须有后端转发。
 
-### 一键部署（推荐）
+### 一键部署（推荐：Railway）
 
-点下面的按钮，用 GitHub 授权后一路确认即可，仓库根目录的 `render.yaml` 会自动填好配置：
+本项目已实测部署于 **Railway**，线上实例：<https://guofeng-prompt-workbench-production.up.railway.app>
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/fenghao001/guofeng-prompt-workbench)
+部署步骤：
 
-部署完成后会得到一个形如 `https://guofeng-prompt-workbench.onrender.com` 的网址，发给任何人都能直接打开使用。
+1. 打开 <https://railway.app>，用 **GitHub 登录**
+2. **New Project → Deploy from GitHub repo**，选本仓库
+3. 首次会提示 **Configure GitHub App**，授权后仓库才会出现在列表里
+4. 选中仓库后 Railway 自动识别为 Node 项目并构建（`npm install` + `npm start`）
+5. 构建成功后进服务 → **Settings → Networking → Generate Domain**，拿到公网网址
 
-> Render 免费版一段时间无访问会休眠，首次打开需等待约 30 秒冷启动。
+**部署后需手动添加环境变量**（服务 → Variables）：
+
+| Key | Value |
+|---|---|
+| `LLM_BASE_URL` | `https://integrate.api.nvidia.com/v1` |
+| `LLM_MODEL` | `nvidia/nemotron-3-ultra-550b-a55b` |
+| `MAX_TOKENS` | `16000` |
+| `MOCK` | `0` |
+
+> ⚠️ **不要设置 `LLM_API_KEY`**，让每位使用者在网页配置面板填自己的密钥，避免你的额度被他人消耗。
+
+> 注：Railway 为 30 天 / $5 试用额度（试用期无需绑卡），小应用消耗极低。
 
 ### 其他平台
 
-任何能跑 Node.js 的地方都可以，仓库已附带 `Procfile`（Railway / Fly.io / Heroku 等通用）：
+任何能跑 Node.js 的地方都可以，仓库已附带 `Procfile`（Fly.io / Heroku 等通用）：
 
 ```bash
 npm install --production
