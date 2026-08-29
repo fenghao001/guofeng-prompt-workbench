@@ -1,6 +1,7 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const OpenAI = require('openai');
+const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 // 读取本项目 .env（显式指定路径，避免向上搜索到 Python 版 .env）
@@ -413,6 +414,9 @@ async function call_llm(system, user, cfg, opts) {
   const extra = build_extra_body(cfg);
   if (extra) kwargs.extra_body = extra;
 
+  const payloadSize = JSON.stringify(kwargs).length;
+  console.log(`[call_llm] base=${base} model=${model} payloadBytes=${payloadSize} region=${process.env.RAILWAY_REGION || 'unknown'}`);
+
   try {
     const resp = await client.chat.completions.create(kwargs);
     const msg = resp.choices[0].message;
@@ -422,6 +426,10 @@ async function call_llm(system, user, cfg, opts) {
     const err = new Error(e.message || 'LLM 调用失败');
     err.status = e.status || e.statusCode;
     err.body = e.error || e.response?.body || null;
+    err.code = e.code || e.cause?.code;
+    err.type = e.type;
+    err.stack = e.stack;
+    console.error('[call_llm] SDK 异常:', e.message, '| code:', e.code || e.cause?.code, '| type:', e.type, '| status:', err.status);
     throw err;
   }
 }
@@ -487,7 +495,7 @@ app.post('/api/generate', async (req, res) => {
 
     res.json(sections);
   } catch (e) {
-    console.error('[/api/generate] 失败:', e.message, '| status:', e.status, '| body:', JSON.stringify(e.body || e.error || null));
+    console.error('[/api/generate] 失败:', e.message, '| code:', e.code, '| type:', e.type, '| status:', e.status, '| body:', JSON.stringify(e.body || e.error || null));
     res.status(500).json({ error: 'LLM 调用失败: ' + e.message });
   }
 });
@@ -505,6 +513,39 @@ app.post('/api/validate', (req, res) => {
     res.json(result);
   } catch (e) {
     res.status(500).json({ valid: false, errors: [e.message] });
+  }
+});
+
+// 诊断接口：直接用 axios 发最小 payload 到 LLM 端点，定位是「网络连接问题」还是「OpenAI SDK 问题」
+app.post('/api/health-llm', async (req, res) => {
+  const cfg = req.body || {};
+  const base = (cfg.baseUrl || process.env.LLM_BASE_URL || '').replace(/\/$/, '');
+  const model = cfg.model || process.env.LLM_MODEL || '';
+  const key = cfg.apiKey || process.env.LLM_API_KEY || '';
+  const url = base + '/chat/completions';
+  const payload = { model, messages: [{ role: 'user', content: 'hi' }], max_tokens: 2 };
+  const start = Date.now();
+  try {
+    const r = await axios.post(url, payload, {
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      timeout: 30000,
+      validateStatus: () => true,
+    });
+    return res.json({
+      ok: r.status >= 200 && r.status < 300,
+      status: r.status,
+      latencyMs: Date.now() - start,
+      target: { baseUrl: base, model: model },
+      bodyPreview: JSON.stringify(r.data).slice(0, 200),
+    });
+  } catch (e) {
+    return res.json({
+      ok: false,
+      error: e.message,
+      code: e.code,
+      latencyMs: Date.now() - start,
+      target: { baseUrl: base, model: model },
+    });
   }
 });
 
