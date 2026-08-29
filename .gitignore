@@ -1,0 +1,21 @@
+# 依赖
+node_modules/
+
+# 密钥与本地配置（切勿提交真实 Key）
+.env
+.env.local
+.env.*.local
+
+# 日志
+*.log
+n3000.log
+npm-debug.log*
+yarn-error.log*
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 编辑器
+.idea/
+.vscode/

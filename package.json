@@ -1,0 +1,26 @@
+{
+  "name": "guofeng-prompt-workbench",
+  "version": "1.0.0",
+  "description": "国风提示词工作台 · Node.js 版（Express + OpenAI SDK），前端兼容原 Vue3 + Element Plus UI",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "keywords": [
+    "guofeng",
+    "prompt",
+    "midjourney",
+    "vue3",
+    "element-plus"
+  ],
+  "author": "User",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.20.0",
+    "body-parser": "^1.20.3",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "openai": "^4.65.0"
+  }
+}

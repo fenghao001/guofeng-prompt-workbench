@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>国风提示词工作台 · 天宫 × 鎏金（Vue3 + Node.js）</title>
+  <link rel="stylesheet" href="/vendor/element-plus.css">
+  <style>
+    :root {
+      --bg: #f6f7fb;
+      --panel: #ffffff;
+      --ink: #1f2329;
+      --muted: #6b7280;
+      --line: #e5e7eb;
+      --accent: #b3122a;
+      --accent2: #2563eb;
+      --chip: #eef2ff;
+      --chipOn: #c7d7ff;
+      --ok: #15803d;
+      --warn: #b45309;
+    }
+
+    * { box-sizing: border-box }
+
+    html, body { height: 100%; margin: 0 }
+
+    body {
+      background: var(--bg);
+      color: var(--ink);
+      font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    #app { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+    .topbar {
+      padding: 14px 22px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(90deg, #fff, #f3f4f8);
+      flex: none;
+    }
+
+    .topbar h1 { margin: 0; font-size: 19px; font-weight: 700; }
+
+    .topbar p { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
+
+    .cfgwrap { flex: none; margin: 12px 18px 0; }
+
+    .main {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      padding: 18px;
+      align-items: stretch;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .col { overflow-y: auto; min-height: 0; padding-right: 4px; }
+
+    @media(max-width:900px) {
+      #app { overflow: auto; }
+      .main { grid-template-columns: 1fr; overflow: visible; }
+      .col { overflow: visible; }
+    }
+
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+
+    .panel h2 { margin: 0 0 12px; font-size: 15px; border-left: 4px solid var(--accent); padding-left: 8px; }
+
+    .branch-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+    .branch {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: .15s;
+      background: #fff;
+      user-select: none;
+    }
+
+    .branch:hover { border-color: var(--accent2); }
+
+    .branch.primary { border-color: var(--accent); background: #fff5f6; }
+
+    .branch.secondary { border-color: #7c3aed; background: #f5f3ff; }
+
+    .branch .name { font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 6px; }
+
+    .branch .tag { font-size: 11px; color: #fff; background: var(--accent2); border-radius: 6px; padding: 1px 7px; }
+
+    .branch .tag.g { background: #b45309; }
+
+    .branch .desc { margin-top: 6px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+
+    .note { font-size: 12px; color: var(--muted); background: #fffbe9; border: 1px solid #fde68a; border-radius: 8px; padding: 9px 11px; line-height: 1.6; margin: 8px 0; }
+
+    .small { font-size: 12px; color: var(--muted); }
+
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
+
+    .chip { font-size: 12px; border: 1px solid var(--line); border-radius: 20px; padding: 4px 10px; cursor: pointer; background: #fff; user-select: none; }
+
+    .chip.on { background: var(--chip); border-color: var(--accent2); color: #1d4ed8; }
+
+    .chip.disabled { opacity: .45; pointer-events: none; }
+
+    .out { border: 1px solid var(--line); border-radius: 10px; padding: 10px; background: #fbfcfe; margin-top: 8px; }
+
+    .out h3 { margin: 0 0 6px; font-size: 13px; color: var(--accent); display: flex; justify-content: space-between; align-items: center; }
+
+    .val-ok { color: var(--ok); font-size: 13px; white-space: pre-line; margin-top: 8px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 9px 11px; }
+
+    .val-bad { color: var(--accent); font-size: 13px; white-space: pre-line; margin-top: 8px; background: #fff5f6; border: 1px solid #fecdd3; border-radius: 8px; padding: 9px 11px; }
+
+    .err { color: var(--accent); font-size: 13px; margin-top: 8px; background: #fff5f6; border: 1px solid #fecdd3; border-radius: 8px; padding: 9px 11px; white-space: pre-line; }
+
+    .loading { color: var(--accent2); font-size: 13px; margin-top: 8px; }
+
+    .cfg-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px 18px; padding: 14px 16px; }
+
+    .cfg-f { min-width: 0; }
+
+    .cfg-row { grid-column: 1 / -1; display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+
+    @media(max-width:900px) { .cfg-grid { grid-template-columns: 1fr; } }
+    /* SDK 代码块用等宽字体，便于直接阅读与复制 */
+    .sdk-code textarea { font-family: Consolas, Monaco, "Courier New", monospace; font-size: 12px; line-height: 1.6; white-space: pre; }
+  </style>
+</head>
+
+<body>
+  <div id="app">
+    <div class="topbar">
+      <h1>国风提示词工作台 · 天宫 × 鎏金（一站式）</h1>
+      <p>选风格 → 填创作 → 点「生成提示词」，由 Node.js 后端按所选 Skill 配方（原文注入）原生生成四段提示词并直接回显，可复制 / 下载 / 手动编辑。</p>
+    </div>
+
+    <!-- 模型配置面板（可折叠） -->
+    <div class="cfgwrap">
+      <el-collapse v-model="cfgOpen">
+        <el-collapse-item name="cfg" title="⚙️ 模型配置（接口地址 / Key / 模型 / MAX_TOKENS / 思考模式 · 点击展开收起）">
+          <div class="cfg-grid">
+            <div class="cfg-f">
+              <label class="small">接口地址（Base URL）</label>
+              <el-input v-model="config.baseUrl" :placeholder="siteDefault.baseUrl || 'https://ark.cn-beijing.volces.com/api/v3'" @input="saveCfg"></el-input>
+            </div>
+            <div class="cfg-f">
+              <label class="small">API Key（填你自己的；留空则用站点默认）</label>
+              <el-input v-model="config.apiKey" placeholder="留空 = 使用站点默认 Key" @input="saveCfg"></el-input>
+            </div>
+            <div class="cfg-f">
+              <label class="small">模型名</label>
+              <el-input v-model="config.model" :placeholder="'如 ' + (siteDefault.model || 'doubao-seed-evolving')" @input="saveCfg"></el-input>
+            </div>
+            <div class="cfg-f">
+              <label class="small">MAX_TOKENS（输出上限）</label>
+              <el-input v-model="config.maxTokens" :placeholder="siteDefault.maxTokens" @input="saveCfg"></el-input>
+            </div>
+            <div class="cfg-row">
+              <el-checkbox v-model="config.support" @change="onSupportChange">模型支持思考模式</el-checkbox>
+              <el-checkbox v-model="config.reasoningEnabled" :disabled="!config.support" @change="saveCfg">开启思考模式</el-checkbox>
+              <span class="small">思考强度
+                <el-select v-model="config.reasoningEffort" :disabled="!config.reasoningEnabled" style="width:110px" @change="saveCfg">
+                  <el-option label="low" value="low"></el-option>
+                  <el-option label="medium" value="medium"></el-option>
+                  <el-option label="high" value="high"></el-option>
+                </el-select>
+              </span>
+            </div>
+            <div class="cfg-row">
+              <el-checkbox v-model="config.remember" @change="saveCfg">记住我的配置（存本机浏览器）</el-checkbox>
+              <el-button size="small" @click="restoreDefault">恢复站点默认</el-button>
+              <el-button size="small" @click="testConn">测试连接</el-button>
+              <span class="small">{{ cfgStatus }}</span>
+            </div>
+            <div class="cfg-row" style="display:block">
+              <div class="note" v-html="defaultInfo"></div>
+            </div>
+          </div>
+        </el-collapse-item>
+      </el-collapse>
+    </div>
+
+    <div class="main">
+      <!-- 左侧：风格资源选择 -->
+      <div class="col">
+        <div class="panel">
+          <h2>① 选择主风格分支（共 11 个，各自独立）</h2>
+          <div class="branch-grid">
+            <div v-for="b in branches" :key="b.id" class="branch"
+              :class="{ primary: primary===b.id, secondary: secondary===b.id }" @click="clickBranch(b.id)"
+              @dblclick.stop="dblBranch(b.id)">
+              <div class="name">{{ b.name }}
+                <span class="tag" :class="{ g: b.src==='鎏金' }">{{ b.src==='鎏金' ? '金' : '天' }}</span>
+              </div>
+              <div class="desc">
+                <b>场景：</b>{{ b.scene }}<br>
+                <b>材质：</b>{{ b.mat }}<br>
+                <b>光色：</b>{{ b.light }}
+                <template v-if="b.note"><br><b>规则：</b>{{ b.note }}</template>
+              </div>
+            </div>
+          </div>
+          <div class="note" style="margin-top:10px">
+            共 11 个分支：天宫系 6 个（带 <span style="color:#2563eb">天</span> 标签，含「水墨金箔（天宫版）」），鎏金系 5 个（带 <span style="color:#b45309">金</span> 标签，含「水墨金箔世界（鎏金版）」）。<b>单击</b>卡片设为主分支；<b>双击</b>另一卡片可叠加「混合」分支（再次双击取消）。
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>② 主体与场景参数</h2>
+          <div class="note">{{ linkNote }}</div>
+
+          <label class="small">主体类型</label>
+          <el-select v-model="subject" style="width:100%">
+            <el-option label="人物 / 群像" value="人物/群像"></el-option>
+            <el-option label="动物 / 神兽" value="动物/神兽"></el-option>
+            <el-option label="建筑 / 空间" value="建筑/空间"></el-option>
+            <el-option label="山水 / 地貌" value="山水/地貌"></el-option>
+            <el-option label="器物 / 产品" value="器物/产品"></el-option>
+            <el-option label="抽象形态" value="抽象形态"></el-option>
+            <el-option label="无人空景" value="无人空景"></el-option>
+          </el-select>
+
+          <label class="small" style="display:block;margin-top:10px">人物造型规则（自由选择，不强制）</label>
+          <el-select v-model="styling" style="width:100%">
+            <el-option label="— 不启用（人物按你的自然语言描述）—" value=""></el-option>
+            <el-option v-for="o in stylingOptions" :key="o.value" :value="o.value" :label="o.label"
+              :disabled="o.disabled"></el-option>
+          </el-select>
+          <div class="small" style="margin-top:4px">天宫原本不强行加人物造型（人物多作尺度锚点）；鎏金按 A/B/C 密度分层。二者均可选，不强制。</div>
+
+          <label class="small" style="display:block;margin-top:10px">活动 / 场景（巨物天宫叙事用）</label>
+          <el-select v-model="activity" style="width:100%" :disabled="!linkTian">
+            <el-option label="— 不指定 —" value=""></el-option>
+            <el-option v-for="o in activityOptions" :key="o" :value="o"></el-option>
+          </el-select>
+
+          <label class="small" style="display:block;margin-top:10px">尺度 / 构图模式（两 Skill 理念不同，均为可选项）</label>
+          <el-select v-model="scale" style="width:100%">
+            <el-option v-for="o in scaleOptions" :key="o.value" :value="o.value" :label="o.label"
+              :disabled="o.disabled"></el-option>
+          </el-select>
+          <div class="small" style="margin-top:4px">天宫式：人物极小、以巨物尺度对比为主；鎏金式：主体占画面比例更大、以材质细节为主。互不强制。</div>
+
+          <label class="small" style="display:block;margin-top:10px">鎏金材质系统（鎏金系分支 / 水墨金箔两版用）</label>
+          <div class="row">
+            <span v-for="m in materials" :key="m.id" class="chip"
+              :class="{ on: selMaterials.includes(m.name), disabled: !linkGilded }" @click="toggleMat(m.name)">{{ m.name
+              }}</span>
+          </div>
+
+          <label class="small" style="display:block;margin-top:10px">画幅比例</label>
+          <el-select v-model="ar" style="width:100%">
+            <el-option label="16:9 横向叙事 / 环境定场" value="16:9"></el-option>
+            <el-option label="21:9 极端巨构 / 孤城留白" value="21:9"></el-option>
+            <el-option label="9:16 竖向巨物 / 竖屏" value="9:16"></el-option>
+            <el-option label="3:4 单体立像 / 图文封面" value="3:4"></el-option>
+            <el-option label="1:1 圆月门 / 对称正殿" value="1:1"></el-option>
+          </el-select>
+
+          <div class="row" style="margin-top:10px">
+            <el-checkbox v-model="raw">MJ 写实模式 --raw</el-checkbox>
+            <span class="small">--s <el-input v-model="s" style="width:70px"></el-input></span>
+            <span class="small">--c <el-input v-model="c" style="width:60px"></el-input></span>
+          </div>
+          <div class="note">
+            <b>--raw（写实模式）</b>：减少 MJ 美学润色，更贴近提示词直译。天宫系默认<b>开</b>；鎏金系默认<b>关</b>。<br>
+            <b>--s（风格化）</b>：越高 MJ 加工越重。天宫系默认 200；鎏金系默认 350–400。<br>
+            <b>--c（多样性）</b>：越高越随机。两系多为 5，花丝圣像为 3。
+          </div>
+        </div>
+      </div>
+
+      <!-- 右侧：创作 + 生成 + 结果 -->
+      <div class="col">
+        <div class="panel">
+          <h2>③ 创作自然语言</h2>
+          <label class="small">你的创作（原样交给后端，由其按 Skill 配方生成提示词）</label>
+          <el-input v-model="brief" type="textarea" :rows="5"
+            placeholder="例如：一名少女在白玉天阶上回望，远处是翻涌的云海与巨月，手中握着一盏旧金灯。"></el-input>
+          <div class="row" style="margin-top:10px">
+            <el-button type="primary" :loading="loading" @click="generate">生成提示词</el-button>
+            <el-button size="small" :loading="previewLoading" @click="preview">查看请求体</el-button>
+            <span class="small">{{ status }}</span>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>④ 生成结果（内置智能体返回，可编辑）</h2>
+          <div class="row" style="margin-bottom:8px">
+            <el-button size="small" @click="exportMd">导出 Markdown</el-button>
+            <el-button size="small" @click="validate">校验输出</el-button>
+            <el-checkbox v-model="reqHuman">校验时严格要求人物造型词</el-checkbox>
+          </div>
+
+          <div class="out">
+            <h3>画面设计 <el-button size="small" plain @click="copy('design')">复制</el-button></h3>
+            <el-input v-model="result.design" type="textarea" :rows="3" placeholder="生成后回显"></el-input>
+          </div>
+          <div class="out">
+            <h3>ImageGen Prompt（中文） <el-button size="small" plain @click="copy('img')">复制</el-button></h3>
+            <el-input v-model="result.img" type="textarea" :rows="5" placeholder="生成后回显"></el-input>
+          </div>
+          <div class="out">
+            <h3>Midjourney 8.2 Prompt（英文） <el-button size="small" plain @click="copy('mj')">复制</el-button></h3>
+            <el-input v-model="result.mj" type="textarea" :rows="5" placeholder="生成后回显"></el-input>
+          </div>
+          <div class="out">
+            <h3>可调选项 <el-button size="small" plain @click="copy('opt')">复制</el-button></h3>
+            <el-input v-model="result.opt" type="textarea" :rows="3" placeholder="生成后回显"></el-input>
+          </div>
+
+          <div v-if="valMsg" :class="valOk ? 'val-ok' : 'val-bad'">{{ valMsg }}</div>
+          <div v-if="genErr" class="err">{{ genErr }}</div>
+        </div>
+
+        <el-dialog v-model="previewVisible" title="查看请求体（实际将发给 LLM，未真正调用）" width="80%">
+          <div v-if="previewErr" class="err">{{ previewErr }}</div>
+          <template v-else>
+            <p class="small">model：<code>{{ previewData.model }}</code> ｜ baseUrl：<code>{{ previewData.baseUrl }}</code> ｜ key：<code>{{ previewData.apiKeyMasked }}</code></p>
+            <p class="small">调用参数（留空的不发送）：<code>{{ previewParamsText }}</code></p>
+            <p v-if="previewExtraText" class="small">extra_body 扩展参数：<code>{{ previewExtraText }}</code></p>
+            <h3>调用代码（与本次请求等价 · 可直接复制运行）</h3>
+            <el-tabs v-model="codeTab">
+              <el-tab-pane label="OpenAI SDK（Node.js）" name="sdk">
+                <div style="margin-bottom:8px"><el-button size="small" plain @click="copyCode('sdk')">复制代码</el-button></div>
+                <el-input :model-value="previewData.sdkCode || ''" type="textarea" :rows="16" readonly class="sdk-code"></el-input>
+              </el-tab-pane>
+              <el-tab-pane label="原生 HTTP（axios）" name="http">
+                <div style="margin-bottom:8px"><el-button size="small" plain @click="copyCode('http')">复制代码</el-button></div>
+                <el-input :model-value="previewData.httpCode || ''" type="textarea" :rows="22" readonly class="sdk-code"></el-input>
+              </el-tab-pane>
+            </el-tabs>
+            <h3>system（Skill 配方原文 + 分支特征 + 输出结构约束）</h3>
+            <el-input :model-value="(previewData.messages && previewData.messages[0] ? previewData.messages[0].content : '')" type="textarea" :rows="12" readonly></el-input>
+            <h3>user（你的创作需求字段拼装）</h3>
+            <el-input :model-value="(previewData.messages && previewData.messages[1] ? previewData.messages[1].content : '（当前端点已把 system 合并进上方单条 user 消息，无独立 user 段）')" type="textarea" :rows="8" readonly></el-input>
+          </template>
+        </el-dialog>
+      </div>
+    </div>
+  </div>
+
+  <script src="/vendor/vue.global.js"></script>
+  <script src="/vendor/element-plus.full.js"></script>
+  <script>
+    const { createApp } = Vue;
+
+    const BRANCHES = [
+      { id: "baiyu", name: "白玉金阙", src: "天宫", scene: "礼仪宫殿、天门、中轴长阶、云端回廊、白玉露台", mat: "象牙白玉石、朱砂木柱、古金构件、深色木顶、黑镜面漆地", light: "清晨/落日金光，阴影青灰，局部矿物青绿", mood: "庄严、神圣、秩序、静谧", ar: "16:9", raw: true, s: 200, c: 5 },
+      { id: "yunhai", name: "云海孤城", src: "天宫", scene: "空殿、断桥、悬台、远山、无尽云海", mat: "大面积留白，单/极少人物", light: "雾蓝、月白、淡金，低饱和", mood: "辽阔、孤寂、超脱、时间停滞", ar: "16:9", raw: true, s: 200, c: 5 },
+      { id: "shenmu", name: "神木仙境", src: "天宫", scene: "巨型古松、盘根古树、垂藤、悬崖寺观、林间天门", mat: "苍老木纹、青苔、岩壁、白玉栏杆、铜铃玉饰", light: "树冠缝隙体积光与薄雾", mood: "生机、古老、隐秘、敬畏", ar: "16:9", raw: true, s: 200, c: 5 },
+      { id: "bingxue", name: "冰雪天关", src: "天宫", scene: "雪谷、冰壁、白色巨龙或冰雕天门、黑色绝壁、云瀑", mat: "冷蓝白为主，极少暖金点光", light: "冷蓝白，极低暖金", mood: "肃杀、清寂、朝圣、边界感", ar: "9:16", raw: true, s: 200, c: 5 },
+      { id: "yuegong", name: "月宫星阙", src: "天宫", scene: "巨月、圆形月门、星河、夜间宫阙、悬浮山峰", mat: "月白、深青、暗金、少量朱红", light: "月光 / 殿内暖光单一主光", mood: "浪漫、清冷、遥远、神秘", ar: "1:1", raw: true, s: 200, c: 5 },
+      { id: "shuimo_t", name: "水墨金箔（天宫版）", src: "天宫", scene: "人物衣袂化为山水、墨色云海、液态大漆、矿物颜料与金箔山脊", mat: "湿墨、半透明玉、树脂、鎏金、矿物青绿", light: "冷青黑大场域，暖掠光沿结构显现", mood: "抽象、材质转化、东方留白", ar: "16:9", raw: true, s: 200, c: 5, note: "可选支线：仅在用户要求水墨、金箔、材质转化或更抽象时使用，不得污染默认写实仙宫" },
+      { id: "meng", name: "梦幻透明鎏金", src: "鎏金", scene: "人物、动物、神兽、花卉、器物、抽象、近景/单体", mat: "透明琥珀金液/玻璃为主，少量花丝金属 / 碎金箔", light: "深青黑场域、暖象牙主体、香槟金高光、弱冷青边光", mood: "梦幻、神秘、精致、静谧 / 克制力量", ar: "16:9", raw: false, s: 350, c: 5 },
+      { id: "shuimo_j", name: "水墨金箔世界（鎏金版）", src: "鎏金", scene: "山水、建筑、巨树、服装延展、微缩世界、抽象地形", mat: "湿墨/黑漆 + 贴附碎金箔 + 白树脂云/宣纸/矿物青绿", light: "冷青黑大场域，暖掠光沿结构短暂显现", mood: "辽阔、古老、内省、东方留白", ar: "16:9", raw: false, s: 350, c: 5, note: "金箔只沿山脊、裂纹、树根、鳞片、衣褶、波纹或建筑节点附着" },
+      { id: "yuxue", name: "雨雪湿光", src: "鎏金", scene: "雨、雪、雾、湿发、湿毛、雨夜街巷、风雪荒野", mat: "湿润真实表面、稀疏金痕、透明水膜、天气粒子", light: "冷青灰天气，暖肤色/主体局部低角度金光", mood: "触觉化、亲密、脆弱、坚韧", ar: "16:9", raw: false, s: 350, c: 5 },
+      { id: "huasi", name: "花丝圣像", src: "鎏金", scene: "仪式人物、神兽正面、祭器、面具、王座、门扉、雕像", mat: "实心花丝金属 + 透明金液分层；珍珠/月弧可选", light: "近黑背景、暖金主光、局部强反射 bloom", mood: "庄严、华丽、神圣", ar: "1:1", raw: false, s: 325, c: 3 },
+      { id: "kuangcai", name: "矿彩树脂梦境", src: "鎏金", scene: "花卉、海洋生物、地貌、器物、抽象、桌面微缩", mat: "象牙树脂、半透玉质、青绿矿彩、朱砂小点、湿墨、金箔", light: "柔和顶光/侧光，金在树脂内部折射", mood: "超现实、精工、宁静、珍贵", ar: "3:4", raw: false, s: 400, c: 5 }
+    ];
+    const MATERIALS = [
+      { id: "filigree", name: "实心花丝金属" },
+      { id: "liquid", name: "透明琥珀金液/玻璃" },
+      { id: "leaf", name: "贴附碎金箔" },
+      { id: "ink", name: "湿墨/黑漆" },
+      { id: "resin", name: "白色树脂云" },
+      { id: "mineral", name: "矿物青绿" }
+    ];
+    const SCALE_BASE = [
+      { value: "纯景观/独行者（人物 1%–5%）｜天宫式", label: "纯景观 / 独行者（人物 1%–5%）｜天宫式" },
+      { value: "群体活动（人物 8%–15%）｜天宫式", label: "群体活动（人物 8%–15%）｜天宫式" },
+      { value: "近景人物叙事（保留巨物参照）｜天宫式", label: "近景人物叙事（保留巨物参照）｜天宫式" },
+      { value: "低机位仰视/高位远眺（强化巨物尺度）｜天宫式", label: "低机位仰视 / 高位远眺（强化巨物尺度）｜天宫式" },
+      { value: "单体立像/竖向主体（35%–70%）｜鎏金式", label: "单体立像 / 竖向主体（35%–70%）｜鎏金式" },
+      { value: "环境叙事（主体 8%–30%）｜鎏金式", label: "环境叙事（主体 8%–30%）｜鎏金式" },
+      { value: "亲密近景（脸/兽首/花蕊/器物细节）｜鎏金式", label: "亲密近景（脸/兽首/花蕊/器物细节）｜鎏金式" },
+      { value: "顶视微缩（桌面世界）｜鎏金式", label: "顶视微缩（桌面世界）｜鎏金式" },
+      { value: "正面对称（器物/门扉/雕像/仪式）｜鎏金式", label: "正面对称（器物/门扉/雕像/仪式）｜鎏金式" }
+    ];
+    const STYLING_BASE = [
+      { value: "anchor", label: "天宫式 · 人物尺度锚点：背面/侧后方行者，占画面 1%–5%，衬托巨物尺度，不加发饰服饰规则" },
+      { value: "A", label: "鎏金式 · A 密度（低装饰）：湿披发/低束，单枚细金簪或小型旧金发梳，厚实赭金/深青披风" },
+      { value: "B", label: "鎏金式 · B 密度（中装饰）：半束半披或低髻，小到中等旧金花丝发梳或簪，象牙白丝绸+香槟金半透外纱" },
+      { value: "C", label: "鎏金式 · C 密度（高装饰）：有边界的实心旧金花丝冠/冕，长流苏避开面部（适合仪式/圣像）" }
+    ];
+    const ACTIVITY_BASE = ["喝茶 / 交谈 / 对弈", "奏乐 / 起舞 / 宴饮", "朝会 / 祭礼 / 受封", "行走 / 远望 / 守候", "修行 / 阅读 / 抚琴", "无人空景"];
+
+    const CFG_KEY = "guofeng_cfg_v1";
+
+    createApp({
+      data() {
+        return {
+          cfgOpen: [],
+          branches: BRANCHES,
+          materials: MATERIALS,
+          primary: "baiyu",
+          secondary: null,
+          clickTimer: null,
+          previewVisible: false,
+          previewLoading: false,
+          previewData: {},
+          previewErr: "",
+          codeTab: "sdk",
+          brief: "",
+          subject: "人物/群像",
+          styling: "",
+          activity: "",
+          scale: SCALE_BASE[0].value,
+          selMaterials: [],
+          ar: "16:9", raw: true, s: 200, c: 5,
+          config: { baseUrl: "", apiKey: "", model: "", maxTokens: "", support: false, reasoningEnabled: false, reasoningEffort: "medium", remember: true },
+          siteDefault: {},
+          cfgStatus: "",
+          defaultInfo: "正在读取站点默认配置…",
+          loading: false,
+          status: "",
+          genErr: "",
+          result: { design: "", img: "", mj: "", opt: "" },
+          reqHuman: false,
+          valMsg: "",
+          valOk: false
+        };
+      },
+      computed: {
+        primaryBranch() { return this.branches.find(b => b.id === this.primary); },
+        secondaryBranch() { return this.secondary ? this.branches.find(b => b.id === this.secondary) : null; },
+        linkTian() {
+          const b = this.primaryBranch, s = this.secondaryBranch;
+          return b.src === "天宫" || (s && s.src === "天宫");
+        },
+        linkGilded() {
+          const b = this.primaryBranch, s = this.secondaryBranch;
+          return b.src === "鎏金" || (s && s.src === "鎏金") || b.id === "shuimo_t" || (s && s.id === "shuimo_t");
+        },
+        scaleOptions() {
+          return SCALE_BASE.map(o => {
+            let disabled = false;
+            if (o.value.includes("天宫式") && !this.linkTian) disabled = true;
+            if (o.value.includes("鎏金式") && !this.linkGilded) disabled = true;
+            return { ...o, disabled };
+          });
+        },
+        stylingOptions() {
+          return STYLING_BASE.map(o => {
+            let disabled = false;
+            if (o.value === "anchor" && !this.linkTian) disabled = true;
+            if (o.value !== "anchor" && !this.linkGilded) disabled = true;
+            return { ...o, disabled };
+          });
+        },
+        activityOptions() { return ACTIVITY_BASE; },
+        // 把后端回传的调用参数对象铺平成一行文本，便于在预览里核对
+        previewParamsText() {
+          const p = this.previewData.params;
+          if (!p) return "";
+          return Object.keys(p).map(k => {
+            const v = p[k];
+            return k + " = " + (v !== null && typeof v === "object" ? JSON.stringify(v) : v);
+          }).join("  ｜  ");
+        },
+        previewExtraText() {
+          const e = this.previewData.extra_body;
+          if (!e) return "";
+          return Object.keys(e).map(k => k + " = " + e[k]).join("  ｜  ");
+        },
+        linkNote() {
+          const b = this.primaryBranch;
+          let msg = `当前主分支「${b.name}」（${b.src}系）：`;
+          msg += this.linkTian ? "「活动 / 场景」「天宫式」可选；" : "「活动 / 场景」「天宫式」已禁用；";
+          msg += this.linkGilded ? "「鎏金材质系统」「鎏金式」可选。" : "「鎏金材质系统」「鎏金式」已禁用。";
+          if (this.secondaryBranch) msg += ` 已叠加混合分支「${this.secondaryBranch.name}」，两侧全部开放。`;
+          return msg;
+        }
+      },
+      methods: {
+        clickBranch(id) {
+          // 单击：延时执行，给双击留出取消窗口
+          if (this.clickTimer) clearTimeout(this.clickTimer);
+          this.clickTimer = setTimeout(() => {
+            this.clickTimer = null;
+            this.primary = id;
+            if (this.secondary === id) this.secondary = null; // 双击自己时无意义，保持单一主分支
+            this.syncDefaults();
+            this.applyLinkage();
+          }, 220);
+        },
+        dblBranch(id) {
+          // 双击：取消待执行的单击，叠加/取消「混合」分支（不能是主分支）
+          if (this.clickTimer) { clearTimeout(this.clickTimer); this.clickTimer = null; }
+          if (id === this.primary) return; // 双击主分支本身无意义
+          this.secondary = (this.secondary === id) ? null : id;
+          this.applyLinkage();
+        },
+        syncDefaults() {
+          const b = this.primaryBranch;
+          this.ar = b.ar; this.raw = b.raw; this.s = b.s; this.c = b.c;
+        },
+        applyLinkage() {
+          const so = this.scaleOptions.find(o => o.value === this.scale);
+          if (so && so.disabled) { const first = this.scaleOptions.find(o => !o.disabled); if (first) this.scale = first.value; }
+          const st = this.stylingOptions.find(o => o.value === this.styling);
+          if (st && st.disabled) this.styling = "";
+          if (!this.linkTian) this.activity = "";
+          if (!this.linkGilded) this.selMaterials = [];
+        },
+        toggleMat(name) { if (!this.linkGilded) return; const i = this.selMaterials.indexOf(name); if (i >= 0) this.selMaterials.splice(i, 1); else this.selMaterials.push(name); },
+        readCfg() {
+          return {
+            baseUrl: (this.config.baseUrl || "").trim(),
+            apiKey: (this.config.apiKey || "").trim(),
+            model: (this.config.model || "").trim(),
+            maxTokens: this.config.maxTokens || "",
+            support: this.config.support,
+            reasoningEnabled: this.config.reasoningEnabled,
+            reasoningEffort: this.config.reasoningEffort,
+            remember: this.config.remember
+          };
+        },
+        saveCfg() { if (this.config.remember) localStorage.setItem(CFG_KEY, JSON.stringify(this.readCfg())); },
+        onSupportChange() { if (!this.config.support) this.config.reasoningEnabled = false; this.saveCfg(); },
+        async initCfg() {
+          try { const r = await fetch("/api/config"); this.siteDefault = await r.json(); } catch (e) { this.siteDefault = {}; }
+          let saved = null;
+          try { saved = JSON.parse(localStorage.getItem(CFG_KEY) || "null"); } catch (e) { saved = null; }
+          const d = this.siteDefault || {};
+          this.config.baseUrl = saved?.baseUrl ?? d.baseUrl ?? "";
+          this.config.apiKey = saved?.apiKey ?? "";
+          this.config.model = saved?.model ?? d.model ?? "";
+          this.config.maxTokens = saved?.maxTokens ?? d.maxTokens ?? "";
+          this.config.support = saved?.support ?? false;
+          this.config.reasoningEnabled = saved?.reasoningEnabled ?? false;
+          this.config.reasoningEffort = saved?.reasoningEffort || "medium";
+          this.config.remember = saved?.remember ?? true;
+          const keyInfo = d.apiKeySet ? `已配置（脱敏：${d.apiKeyMasked}）` : "未配置";
+          this.defaultInfo = `📌 <b>站点默认</b>：接口 ${d.baseUrl || "（空）"} ｜ 模型 ${d.model || "（空）"} ｜ MAX_TOKENS ${d.maxTokens || "（空）"} ｜ Key ${keyInfo}。<br>页面里填写的配置会覆盖站点默认；Key 留空即使用站点默认。配置只存在你本机浏览器（勾选「记住」时），不会上传到服务器。`;
+        },
+        restoreDefault() {
+          localStorage.removeItem(CFG_KEY);
+          const d = this.siteDefault || {};
+          this.config.baseUrl = d.baseUrl || "";
+          this.config.apiKey = "";
+          this.config.model = d.model || "";
+          this.config.maxTokens = d.maxTokens ?? "";
+          this.config.support = false;
+          this.config.reasoningEnabled = false;
+          this.config.reasoningEffort = "medium";
+          this.config.remember = true;
+          this.cfgStatus = "已恢复站点默认（本地配置已清除）";
+        },
+        async testConn() {
+          this.cfgStatus = "连接测试中…";
+          try {
+            const r = await fetch("/api/test", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(this.readCfg()) });
+            const data = await r.json();
+            if (data.ok) {
+              this.cfgStatus = "✓ 连接成功（模型响应：" + (data.sample || "").trim() + "）";
+            } else {
+              let msg = "✗ 连接失败：" + (data.error || "未知错误");
+              if (data.status) msg += "\n状态码：" + data.status;
+              if (data.target) msg += "\n目标：" + data.target.baseUrl + " / " + data.target.model;
+              if (data.body) msg += "\n响应体：" + JSON.stringify(data.body);
+              this.cfgStatus = msg;
+            }
+          } catch (e) { this.cfgStatus = "✗ 测试出错：" + e.message; }
+        },
+        async generate() {
+          if (!this.brief.trim()) { this.status = "⚠️ 请先填写创作自然语言"; return; }
+          this.loading = true; this.status = "生成中…"; this.genErr = ""; this.valMsg = "";
+          const payload = {
+            branchId: this.primary, secondaryId: this.secondary, brief: this.brief,
+            subject: this.subject, styling: this.styling, activity: this.activity, scale: this.scale,
+            materials: this.selMaterials, ar: this.ar, raw: this.raw, s: this.s, c: this.c,
+            config: this.readCfg()
+          };
+          try {
+            const r = await fetch("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+            const data = await r.json();
+            if (!r.ok) throw new Error(data.error || "生成失败");
+            this.result = { design: data.design || "", img: data.img || "", mj: data.mj || "", opt: data.opt || "" };
+            this.status = "✓ 已生成（由后端按 Skill 配方返回）";
+          } catch (e) {
+            this.status = "✗ 生成出错";
+            this.genErr = "生成失败：\n" + e.message;
+          } finally { this.loading = false; }
+        },
+        async preview() {
+          if (!this.brief.trim()) { this.status = "⚠️ 请先填写创作自然语言"; return; }
+          this.previewLoading = true; this.previewErr = "";
+          const payload = {
+            branchId: this.primary, secondaryId: this.secondary, brief: this.brief,
+            subject: this.subject, styling: this.styling, activity: this.activity, scale: this.scale,
+            materials: this.selMaterials, ar: this.ar, raw: this.raw, s: this.s, c: this.c,
+            config: this.readCfg()
+          };
+          try {
+            const r = await fetch("/api/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+            const data = await r.json();
+            if (!r.ok) throw new Error(data.error || "预览失败");
+            this.previewData = data;
+            this.previewVisible = true;
+          } catch (e) {
+            this.previewErr = "预览请求出错：\n" + e.message;
+          } finally { this.previewLoading = false; }
+        },
+        copy(field) {
+          const map = { design: "result.design", img: "result.img", mj: "result.mj", opt: "result.opt" };
+          const t = this.result[field];
+          navigator.clipboard && navigator.clipboard.writeText(t);
+          if (window.ElementPlus && ElementPlus.ElMessage) ElementPlus.ElMessage.success("已复制");
+        },
+        copyCode(kind) {
+          const t = kind === "http" ? (this.previewData.httpCode || "") : (this.previewData.sdkCode || "");
+          if (!t) return;
+          navigator.clipboard && navigator.clipboard.writeText(t);
+          if (window.ElementPlus && ElementPlus.ElMessage) {
+            ElementPlus.ElMessage.success(kind === "http" ? "已复制 axios 调用代码" : "已复制 OpenAI SDK 调用代码");
+          }
+        },
+        exportMd() {
+          const b = this.primaryBranch;
+          const md = `# 国风提示词 · ${b.name}${this.secondaryBranch ? " × " + this.secondaryBranch.name : ""}\n\n`
+            + `## 画面设计\n${this.result.design}\n\n`
+            + `## ImageGen Prompt\n${this.result.img}\n\n`
+            + `## Midjourney 8.2 Prompt\n${this.result.mj}\n\n`
+            + `## 可调选项\n${this.result.opt}\n`;
+          const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url; a.download = "国风提示词输出.md"; a.click();
+          setTimeout(() => URL.revokeObjectURL(url), 2000);
+        },
+        async validate() {
+          const payload = { ...this.result, requireHuman: this.reqHuman };
+          try {
+            const r = await fetch("/api/validate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+            const data = await r.json();
+            if (data.valid) {
+              this.valOk = true;
+              this.valMsg = "VALID（校验通过）\n· 四段输出齐全\n· Midjourney 版本行以 --v 8.2 结尾\n· 无未授权参考参数 / URL\n· --ar 画幅参数存在\n· 无未完成占位符"
+                + (this.reqHuman ? "\n· 人物造型词（发饰 / 服装层次 / 纺织材料）齐全" : "");
+            } else {
+              this.valOk = false;
+              this.valMsg = "INVALID（校验未通过）\n" + data.errors.map(e => "· " + e).join("\n");
+            }
+          } catch (e) {
+            this.valOk = false;
+            this.valMsg = "校验请求出错：" + e.message;
+          }
+        }
+      },
+      mounted() {
+        this.initCfg();
+        this.applyLinkage();
+      }
+    }).use(ElementPlus).mount("#app");
+  </script>
+</body>
+</html>
