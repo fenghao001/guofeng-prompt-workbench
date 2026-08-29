@@ -404,7 +404,7 @@ async function call_llm(system, user, cfg, opts) {
   if (!key) throw new Error('未配置 API Key：请在面板填写，或在 .env 设置 LLM_API_KEY');
   if (!model) throw new Error('未配置模型名：请在面板填写，或在 .env 设置 LLM_MODEL');
 
-  const client = new OpenAI({ apiKey: key, baseURL: base });
+  const client = new OpenAI({ apiKey: key, baseURL: base, timeout: 300000 });
 
   const messages = build_messages(system, user, cfg);
 
@@ -487,6 +487,7 @@ app.post('/api/generate', async (req, res) => {
 
     res.json(sections);
   } catch (e) {
+    console.error('[/api/generate] 失败:', e.message, '| status:', e.status, '| body:', JSON.stringify(e.body || e.error || null));
     res.status(500).json({ error: 'LLM 调用失败: ' + e.message });
   }
 });
