@@ -507,8 +507,12 @@ app.post('/api/generate', async (req, res) => {
 
     res.json(sections);
   } catch (e) {
-    console.error('[/api/generate] 失败:', e.message, '| code:', e.code, '| type:', e.type, '| status:', e.status, '| body:', JSON.stringify(e.body || e.error || null));
-    res.status(500).json({ error: 'LLM 调用失败: ' + e.message });
+    const status = e.status ?? e.response?.status ?? null;
+    const body = e.body ?? e.response?.data ?? null;
+    let bodyStr = null;
+    try { bodyStr = JSON.stringify(body); } catch (_) { bodyStr = String(body); }
+    console.error('[/api/generate] 失败:', e.message, '| status:', status, '| body:', bodyStr);
+    res.status(500).json({ error: 'LLM 调用失败: ' + e.message, status, body });
   }
 });
 
