@@ -116,7 +116,30 @@ node axios-call.mjs    # 原生 axios 版（会打印完整请求体）
 
 ## 部署
 
-任何能跑 Node.js 的地方都可以：
+### ⚠️ 为什么不能只托管静态页面
+
+本项目**必须有 Node 后端**，GitHub Pages / 纯静态托管跑不起来。原因不是架构偷懒，而是 **CORS 限制**：
+
+| 端点 | 浏览器直连 | 实测结果 |
+|---|---|---|
+| DeepSeek | ✅ | 返回 `access-control-allow-origin`，可从浏览器直连 |
+| **NVIDIA** | ❌ | **完全不返回 CORS 头**，浏览器请求会被直接拦截 |
+
+浏览器直接调 NVIDIA 会被同源策略拦死，所以必须有后端转发。
+
+### 一键部署（推荐）
+
+点下面的按钮，用 GitHub 授权后一路确认即可，仓库根目录的 `render.yaml` 会自动填好配置：
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/fenghao001/guofeng-prompt-workbench)
+
+部署完成后会得到一个形如 `https://guofeng-prompt-workbench.onrender.com` 的网址，发给任何人都能直接打开使用。
+
+> Render 免费版一段时间无访问会休眠，首次打开需等待约 30 秒冷启动。
+
+### 其他平台
+
+任何能跑 Node.js 的地方都可以，仓库已附带 `Procfile`（Railway / Fly.io / Heroku 等通用）：
 
 ```bash
 npm install --production
@@ -125,9 +148,9 @@ npm start
 
 注意：
 
-- 服务默认监听 `0.0.0.0:3000`，端口由 `.env` 的 `PORT` 控制。
+- 端口由环境变量 `PORT` 控制（未设置时为 3001），平台会自动注入，无需手动配置。
 - **不要把 `.env` 提交到仓库**，生产环境请用平台的环境变量功能注入 `LLM_API_KEY`。
-- 若对外开放访问，建议在 `.env` 中**不预置** `LLM_API_KEY`，让每位使用者在网页配置面板填自己的密钥，避免你的额度被他人消耗。
+- 对外开放时**建议不预置** `LLM_API_KEY`，让每位使用者在网页配置面板填自己的密钥，避免你的额度被他人消耗。
 
 ---
 
