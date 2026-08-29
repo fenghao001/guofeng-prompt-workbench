@@ -405,60 +405,44 @@ async function call_llm(system, user, cfg, opts) {
   if (!key) throw new Error('未配置 API Key：请在面板填写，或在 .env 设置 LLM_API_KEY');
   if (!model) throw new Error('未配置模型名：请在面板填写，或在 .env 设置 LLM_MODEL');
 
-  const client = new OpenAI({ apiKey: key, baseURL: base, timeout: 300000 });
-
   const messages = build_messages(system, user, cfg);
 
   // 通用调用参数：只发送面板/站点显式配置过的字段
-  const kwargs = { model, messages, ...build_params(cfg, opts) };
+  const params = build_params(cfg, opts);
   const extra = build_extra_body(cfg);
-  if (extra) kwargs.extra_body = extra;
+  const kwargs = { model, messages, ...params };
+  if (extra) Object.assign(kwargs, extra);
 
   const payloadSize = JSON.stringify(kwargs).length;
   const region = process.env.RAILWAY_REGION || process.env.FLY_REGION || 'unknown';
   console.log(`[call_llm] base=${base} model=${model} payloadBytes=${payloadSize} region=${region}`);
 
+  // 主路径走 axios 原生 HTTP：在 Railway 容器里比 OpenAI SDK 更稳定（避免 ETIMEDOUT）
+  const url = base + '/chat/completions';
   try {
-    const resp = await client.chat.completions.create(kwargs);
-    const msg = resp.choices[0].message;
-    return msg.content;
-  } catch (e) {
-    const msg = e.message || '';
-    const isConnectionError = !e.status && !e.statusCode && /connection|timeout|reset|refused|aborted|ENOTFOUND|ECONNRESET|ETIMEDOUT|socket/i.test(msg);
-    console.error('[call_llm] SDK 异常:', msg, '| code:', e.code || e.cause?.code, '| type:', e.type, '| status:', e.status || e.statusCode, '| isConnectionError:', isConnectionError);
-
-    // Railway / 部分容器里 OpenAI SDK 底层连接不稳定，自动 fallback 到 axios 原生 HTTP
-    if (isConnectionError) {
-      console.log('[call_llm] 触发 axios fallback，尝试原生 HTTP 重试...');
-      try {
-        const url = base + '/chat/completions';
-        const r = await axios.post(url, kwargs, {
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-          timeout: 300000,
-          responseType: 'json',
-          validateStatus: () => true,
-        });
-        if (r.status >= 200 && r.status < 300) {
-          const content = r.data?.choices?.[0]?.message?.content;
-          if (content) return content;
-        }
-        const err = new Error(`axios fallback HTTP ${r.status}: ${JSON.stringify(r.data).slice(0, 200)}`);
-        err.status = r.status;
-        err.body = r.data;
-        throw err;
-      } catch (axErr) {
-        console.error('[call_llm] axios fallback 也失败:', axErr.message);
-        throw axErr;
-      }
+    const r = await axios.post(url, kwargs, {
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      timeout: 300000,
+      responseType: 'json',
+      validateStatus: () => true,
+    });
+    if (r.status >= 200 && r.status < 300) {
+      const content = r.data?.choices?.[0]?.message?.content;
+      if (content) return content;
+      throw new Error('LLM 返回为空：choices[0].message.content 缺失');
     }
-
-    // 把 OpenAI SDK 错误中的状态码、原始响应体一并抛出，便于前端诊断
-    const err = new Error(msg || 'LLM 调用失败');
-    err.status = e.status || e.statusCode;
-    err.body = e.error || e.response?.body || null;
-    err.code = e.code || e.cause?.code;
-    err.type = e.type;
+    const err = new Error(`LLM 调用失败: HTTP ${r.status}: ${JSON.stringify(r.data).slice(0, 200)}`);
+    err.status = r.status;
+    err.body = r.data;
     throw err;
+  } catch (e) {
+    if (e.response) {
+      const err = new Error(`LLM 调用失败: HTTP ${e.response.status}: ${JSON.stringify(e.response.data).slice(0, 200)}`);
+      err.status = e.response.status;
+      err.body = e.response.data;
+      throw err;
+    }
+    throw new Error('LLM 调用失败: ' + e.message);
   }
 }
 
